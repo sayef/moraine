@@ -3,6 +3,13 @@
 //! Some S3-compatible services accept `If-None-Match: *` and `If-Match` and then ignore them.
 //! Delta commits on such a store would silently overwrite each other, so a writer checks once
 //! per store and process, and refuses to write when the store does not honour both modes.
+//!
+//! A probe request can be sent twice (object_store resends a request after a 5xx, whatever its
+//! mode) or lose its response, and then the answer describes the probe's own earlier write, not
+//! the store. Every request therefore writes its own content, and an answer that a resend or a
+//! lost response could explain is checked by reading the object back, as the commit path looks
+//! up its transaction (D92). Only a verified answer gives a verdict; an outcome that stays
+//! unknown fails the probe without one, and nothing is cached.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -10,8 +17,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use object_store::path::Path;
 use object_store::{ObjectStore, ObjectStoreExt, PutMode, PutOptions, PutPayload, UpdateVersion};
 
-use super::{Class, classify};
+use bytes::Bytes;
+
+use super::{Class, StoreFault, classify};
 use crate::clock::{Clock, random_name};
+use crate::commit::AttemptError;
 use crate::error::{Error, Result};
 
 /// How a store handles one conditional write mode.
@@ -108,8 +118,10 @@ async fn probe_once(
 ) -> Result<Capabilities> {
     let create_path = prefix.clone().join("probe").join(random_name(clock));
     let update_path = prefix.clone().join("probe").join(random_name(clock));
-    let create = probe_create(store, &create_path).await;
-    let update = probe_update(store, &update_path).await;
+    // Every request writes its own content, so a read-back tells which request an object holds.
+    let nonce = random_name(clock);
+    let create = probe_create(store, &create_path, &nonce).await;
+    let update = probe_update(store, &update_path, &nonce).await;
     for p in [&create_path, &update_path] {
         let _ = store.delete(p).await;
     }
@@ -118,6 +130,9 @@ async fn probe_once(
         update: update?,
     })
 }
+
+/// Sends of one probe request whose outcome stays unknown before the round is abandoned.
+const STEP_ATTEMPTS: u32 = 3;
 
 fn put_mode(mode: PutMode) -> PutOptions {
     PutOptions {
@@ -133,77 +148,164 @@ fn rejected(e: &object_store::Error) -> bool {
     )
 }
 
-async fn probe_create(store: &dyn ObjectStore, path: &Path) -> Result<Support> {
-    match store
-        .put_opts(
-            path,
-            PutPayload::from_static(b"1"),
-            put_mode(PutMode::Create),
-        )
-        .await
-    {
-        Ok(_) => {}
-        Err(e) if rejected(&e) => return Ok(Support::Rejected),
-        Err(e) => return Err(e.into()),
-    }
-    match store
-        .put_opts(
-            path,
-            PutPayload::from_static(b"2"),
-            put_mode(PutMode::Create),
-        )
-        .await
-    {
-        Ok(_) => Ok(Support::Ignored),
-        Err(object_store::Error::AlreadyExists { .. }) => Ok(Support::Honoured),
-        Err(e) if rejected(&e) => Ok(Support::Rejected),
+/// The payload of probe request `step`.
+fn token(nonce: &str, step: &str) -> Bytes {
+    Bytes::from(format!("moraine-probe {nonce} {step}"))
+}
+
+/// An outcome the probe could not resolve. It is ambiguous, so the round starts again with fresh
+/// names, and if every round ends this way the probe fails without a verdict.
+fn inconclusive(detail: impl std::fmt::Display) -> Error {
+    StoreFault::new(
+        Class::Ambiguous,
+        format!("capability probe inconclusive: {detail}"),
+    )
+    .into_store_error()
+    .into()
+}
+
+/// Whether a failed probe write may still have taken effect: the commit path's rule
+/// ([`AttemptError::from_store_is_open`]).
+fn open(e: &object_store::Error) -> bool {
+    AttemptError::from_store_is_open(e)
+}
+
+/// The content and version of the object at `path`, `None` when there is none.
+async fn read_back(store: &dyn ObjectStore, path: &Path) -> Result<Option<(Bytes, UpdateVersion)>> {
+    match store.get(path).await {
+        Ok(r) => {
+            let version = UpdateVersion {
+                e_tag: r.meta.e_tag.clone(),
+                version: r.meta.version.clone(),
+            };
+            Ok(Some((r.bytes().await?, version)))
+        }
+        Err(object_store::Error::NotFound { .. }) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
 
-async fn probe_update(store: &dyn ObjectStore, path: &Path) -> Result<Support> {
-    let first = store
-        .put_opts(
-            path,
-            PutPayload::from_static(b"1"),
-            put_mode(PutMode::Overwrite),
-        )
-        .await?;
+async fn put(store: &dyn ObjectStore, path: &Path, body: &Bytes, mode: PutMode) -> PutRes {
+    store
+        .put_opts(path, PutPayload::from(body.clone()), put_mode(mode))
+        .await
+}
+
+type PutRes = std::result::Result<object_store::PutResult, object_store::Error>;
+
+/// Put-if-absent: create the object, then create it again. Only a second create that the store
+/// accepted, or a read-back holding the second create's content, says the mode is ignored; an
+/// answer that a resent or lost request may explain is checked against the object first.
+async fn probe_create(store: &dyn ObjectStore, path: &Path, nonce: &str) -> Result<Support> {
+    let first = token(nonce, "create-1");
+    let second = token(nonce, "create-2");
+    match put(store, path, &first, PutMode::Create).await {
+        Ok(_) => {}
+        Err(e) if rejected(&e) => return Ok(Support::Rejected),
+        // A resent create meets its own first send; a lost response may hide either outcome.
+        Err(e) if matches!(e, object_store::Error::AlreadyExists { .. }) || open(&e) => {
+            match read_back(store, path).await? {
+                Some((body, _)) if body == first => {}
+                _ => return Err(inconclusive(e)),
+            }
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let mut last = None;
+    for _ in 0..STEP_ATTEMPTS {
+        let e = match put(store, path, &second, PutMode::Create).await {
+            Ok(_) => return Ok(Support::Ignored),
+            Err(e) if rejected(&e) => return Ok(Support::Rejected),
+            Err(e) if matches!(e, object_store::Error::AlreadyExists { .. }) || open(&e) => e,
+            Err(e) => return Err(e.into()),
+        };
+        match read_back(store, path).await? {
+            Some((body, _)) if body == second => return Ok(Support::Ignored),
+            Some((body, _)) if body == first => {
+                if matches!(e, object_store::Error::AlreadyExists { .. }) {
+                    return Ok(Support::Honoured);
+                }
+                // The request may not have reached the store: send it again.
+                last = Some(e);
+            }
+            _ => return Err(inconclusive(e)),
+        }
+    }
+    Err(inconclusive(
+        last.map_or_else(String::new, |e| e.to_string()),
+    ))
+}
+
+/// Compare-and-swap: overwrite the object, update it with a stale ETag (must fail), then with
+/// the current one (must succeed). A refusal of the current ETag counts as `Rejected` only once
+/// a read-back shows the object unchanged at exactly that ETag; when the object holds the swap's
+/// own content, the swap took effect and a resend or a lost response produced the error.
+async fn probe_update(store: &dyn ObjectStore, path: &Path, nonce: &str) -> Result<Support> {
+    let base = token(nonce, "update-1");
+    let stale_body = token(nonce, "update-2");
+    let swap = token(nonce, "update-3");
+    let written = put(store, path, &base, PutMode::Overwrite).await?;
     let stale = UpdateVersion {
         e_tag: Some("\"moraine-probe-stale-etag\"".into()),
         version: None,
     };
-    match store
-        .put_opts(
-            path,
-            PutPayload::from_static(b"2"),
-            put_mode(PutMode::Update(stale)),
-        )
-        .await
-    {
-        Ok(_) => return Ok(Support::Ignored),
-        Err(object_store::Error::Precondition { .. }) => {}
-        Err(e) if rejected(&e) => return Ok(Support::Rejected),
-        Err(e) => return Err(e.into()),
+    let mut last = None;
+    let mut refused = false;
+    for _ in 0..STEP_ATTEMPTS {
+        let e = match put(store, path, &stale_body, PutMode::Update(stale.clone())).await {
+            Ok(_) => return Ok(Support::Ignored),
+            Err(object_store::Error::Precondition { .. }) => {
+                refused = true;
+                break;
+            }
+            Err(e) if rejected(&e) => return Ok(Support::Rejected),
+            Err(e) if open(&e) => e,
+            Err(e) => return Err(e.into()),
+        };
+        match read_back(store, path).await? {
+            Some((body, _)) if body == stale_body => return Ok(Support::Ignored),
+            Some((body, _)) if body == base => last = Some(e),
+            _ => return Err(inconclusive(e)),
+        }
     }
-    let current = UpdateVersion {
-        e_tag: first.e_tag,
-        version: first.version,
+    if !refused {
+        return Err(inconclusive(
+            last.map_or_else(String::new, |e| e.to_string()),
+        ));
+    }
+    let mut expected = UpdateVersion {
+        e_tag: written.e_tag,
+        version: written.version,
     };
-    match store
-        .put_opts(
-            path,
-            PutPayload::from_static(b"3"),
-            put_mode(PutMode::Update(current)),
-        )
-        .await
-    {
-        Ok(_) => Ok(Support::Honoured),
-        // The store refused a correct ETag: compare-and-swap cannot work on it.
-        Err(object_store::Error::Precondition { .. }) => Ok(Support::Rejected),
-        Err(e) if rejected(&e) => Ok(Support::Rejected),
-        Err(e) => Err(e.into()),
+    let mut last = None;
+    for _ in 0..STEP_ATTEMPTS {
+        let e = match put(store, path, &swap, PutMode::Update(expected.clone())).await {
+            Ok(_) => return Ok(Support::Honoured),
+            Err(e) if rejected(&e) => return Ok(Support::Rejected),
+            Err(e) if matches!(e, object_store::Error::Precondition { .. }) || open(&e) => e,
+            Err(e) => return Err(e.into()),
+        };
+        match read_back(store, path).await? {
+            // The swap took effect: its resend, or the lost response, made the error.
+            Some((body, _)) if body == swap => return Ok(Support::Honoured),
+            // A stale-ETag update took effect after all.
+            Some((body, _)) if body == stale_body => return Ok(Support::Ignored),
+            Some((body, now)) if body == base => {
+                if matches!(e, object_store::Error::Precondition { .. }) && now == expected {
+                    // The store refused the very ETag it reports for the unchanged object.
+                    return Ok(Support::Rejected);
+                }
+                // Not sent, or sent with an ETag the store no longer reports: try again with
+                // the one it reports now.
+                expected = now;
+                last = Some(e);
+            }
+            _ => return Err(inconclusive(e)),
+        }
     }
+    Err(inconclusive(
+        last.map_or_else(String::new, |e| e.to_string()),
+    ))
 }
 
 #[cfg(test)]

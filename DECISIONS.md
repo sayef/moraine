@@ -2085,3 +2085,42 @@ the library, not the test.
 - **Benchmarks.** The exact-route runs in `docs/BENCH.md` with `min_file_age` 0 compacted under
   this bug: on S3, each pass left out the files written in about the second before it. I have not
   rerun them.
+
+## D92. The capability probe resolves resent and lost requests before it gives a verdict
+
+The probe (case S2) wrote an object, then sent conditional writes whose answers it took at face
+value. A request can be sent twice, though: object_store resends any request after a 5xx or,
+for idempotent ones, a timeout, and kv0's fault-injecting store does the same. When the
+compare-and-swap with the correct ETag took effect and its response was lost, the second send
+met the probe's own write, got a precondition failure, and the probe concluded that the store
+refuses a correct ETag. The handle then cached `compare-and-swap Rejected`, and every write in
+the process failed with `ConditionalWritesUnsupported` ("open it read-only"). On S3 a single
+network blip during the first write was enough. A resent first create failed the probe outright
+with `AlreadyExists`.
+
+- **Every probe request writes its own content.** The payloads name the round's random nonce and
+  the step, so a read-back tells which request the object holds.
+- **An answer a resend or a lost response could explain is checked first.** For the creates,
+  `AlreadyExists` and an open outcome; for the stale update, an open outcome; for the
+  compare-and-swap, a precondition failure and an open outcome. Open means what the commit path
+  calls open (`AttemptError::from_store_is_open`): ambiguous classes and errors that name no
+  class. The probe then reads the object back: its own content of that request means the write
+  took effect (for the compare-and-swap, `Honoured`; for a create on an existing object or a
+  stale update, `Ignored`); the content before it means the request did not take effect, and
+  it is sent again, up to three times, with the ETag the store now reports.
+- **Only a verified refusal is a rejection.** `Rejected` for compare-and-swap needs a
+  precondition failure and a read-back showing the object unchanged at exactly the ETag the
+  request carried. `NotImplemented` and `NotSupported` stay definite rejections.
+- **An outcome that stays unknown is no verdict.** It is reported as an ambiguous storage
+  error, the round starts again with fresh names, and after three rounds the write that needed
+  the probe fails with that error. Nothing is cached, so the next write probes again. I chose
+  that over retrying longer, because a store that keeps losing responses fails every write
+  anyway.
+- **Tests.** `ChaosStore` can now resend probe writes (`resend_probes`) or script a lost
+  response or a resend on the nth probe write (`probe_script`).
+  `s2_probe_survives_a_resent_or_lost_request` (`tests/store_layer.rs`) puts each fault on each
+  probe write in turn, against stores that honour, ignore and reject conditional writes: the
+  first is always writable, the other two are always refused. Without the fix it fails on the
+  first case. Scenario 19, `probe_under_faults` (`tests/tables_sim.rs`), opens databases and
+  writes under random faults with resent probe writes, and checks that an honouring store is
+  never refused and an ignoring or rejecting one never accepts a write.

@@ -15,6 +15,10 @@
 //! - **cut listing**: a listing fails after part of its results (case S4).
 //! - **conditional writes**: honoured, rejected (`NotImplemented`), or silently ignored and
 //!   performed as plain overwrites (case S2).
+//! - **resent probe writes**: a capability-probe write takes effect, its response is lost, and
+//!   the transport sends it again; the client sees only the second answer, as object_store
+//!   resends any request after a 5xx. Scripted faults put a lost response or a resend on chosen
+//!   probe writes.
 //!
 //! Every faulted error is a [`moraine::testing::StoreFault`] with the class a real client would
 //! infer, so `moraine::testing::classify` sees exactly what it would see in production.
@@ -75,6 +79,22 @@ pub struct FaultRules {
     /// (an unrecognised response, as a store or proxy can return). Nothing says the write did
     /// not happen, so the client must look it up.
     pub generic_after_commits: f64,
+    /// Probability that a capability-probe write (a path with `/probe/`) is resent: the first
+    /// send takes effect and its response is lost, the transport sends it again, and the client
+    /// sees the second answer.
+    pub resend_probes: f64,
+    /// Faults on chosen capability-probe writes, by their position among this store's probe
+    /// writes (0 first), so a deterministic test can put one on each request in turn.
+    pub probe_script: Vec<(u64, ProbeFault)>,
+}
+
+/// A scripted fault on one capability-probe write ([`FaultRules::probe_script`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProbeFault {
+    /// The write takes effect and its response is lost.
+    LostResponse,
+    /// The write takes effect, its response is lost and the transport sends it again.
+    Resent,
 }
 
 impl FaultRules {
@@ -99,6 +119,8 @@ impl FaultRules {
             conditional: Conditional::Honour,
             ambiguous_commits: 0.0,
             generic_after_commits: p(0.05),
+            resend_probes: 0.0,
+            probe_script: Vec::new(),
         }
     }
 }
@@ -113,6 +135,8 @@ pub struct FaultCounts {
     pub stall: AtomicU64,
     pub truncate: AtomicU64,
     pub cut_listing: AtomicU64,
+    /// Probe writes sent twice ([`FaultRules::resend_probes`] and scripted resends).
+    pub resent: AtomicU64,
 }
 
 impl FaultCounts {
@@ -125,6 +149,7 @@ impl FaultCounts {
             &self.stall,
             &self.truncate,
             &self.cut_listing,
+            &self.resent,
         ]
         .iter()
         .map(|c| c.load(Ordering::Relaxed))
@@ -146,6 +171,8 @@ pub struct ChaosStore {
     clock: Option<SimClock>,
     requests: Arc<StoreMetrics>,
     faults: Arc<FaultCounts>,
+    /// Probe writes seen so far, for [`FaultRules::probe_script`].
+    probe_puts: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for ChaosStore {
@@ -181,6 +208,7 @@ impl ChaosStore {
             clock: None,
             requests: Arc::default(),
             faults: Arc::default(),
+            probe_puts: Arc::default(),
         }
     }
 
@@ -375,6 +403,37 @@ impl ObjectStore for ChaosStore {
                 Conditional::Ignore => opts.mode = PutMode::Overwrite,
             }
         }
+        if location.as_ref().contains("/probe/") {
+            let n = self.probe_puts.fetch_add(1, Ordering::Relaxed);
+            let fault = self
+                .rules
+                .probe_script
+                .iter()
+                .find(|(i, _)| *i == n)
+                .map(|(_, f)| *f)
+                .or_else(|| {
+                    self.chance(self.rules.resend_probes)
+                        .then_some(ProbeFault::Resent)
+                });
+            match fault {
+                Some(ProbeFault::Resent) => {
+                    self.faults.resent.fetch_add(1, Ordering::Relaxed);
+                    let _ = self
+                        .inner
+                        .put_opts(location, payload.clone(), opts.clone())
+                        .await;
+                }
+                Some(ProbeFault::LostResponse) => {
+                    self.faults.fail_after.fetch_add(1, Ordering::Relaxed);
+                    self.inner.put_opts(location, payload, opts).await?;
+                    return Err(Self::err(
+                        Class::Ambiguous,
+                        "operation timed out (response lost)",
+                    ));
+                }
+                None => {}
+            }
+        }
         self.mutate(
             location,
             conditional,
@@ -509,6 +568,7 @@ impl ChaosStore {
             clock: self.clock.clone(),
             requests: self.requests.clone(),
             faults: self.faults.clone(),
+            probe_puts: self.probe_puts.clone(),
         })
     }
 }

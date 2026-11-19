@@ -3,7 +3,8 @@
 //! simulated store, faults from `ChaosStore`, and every run checked against the reference model.
 //!
 //! Named scenarios (docs/design/test-ids.md): 1 `no_lost_appends`, 4 `ambiguous_commit_is_idempotent`,
-//! 16 `create_table_race`, 17 `store_without_conditional_put`. `tables_random` mixes everything
+//! 16 `create_table_race`, 17 `store_without_conditional_put`, 19 `probe_under_faults`.
+//! `tables_random` mixes everything
 //! with random faults. The committed history is read from the store without moraine
 //! (`moraine_testkit::table_log`), so moraine's own log reader is checked too.
 //!
@@ -633,4 +634,102 @@ fn store_without_conditional_put() {
     if let Err(f) = r {
         panic!("{f}");
     }
+}
+
+/// Scenario 19: the capability probe under faults (D92). Clients open a database and write while
+/// random faults hit every request, probe writes are resent (the first send takes effect, the
+/// client sees the second answer) and lose their responses. On a store that honours conditional
+/// writes no client is ever refused with `ConditionalWritesUnsupported` and each one writes in
+/// the end; on a store that ignores or rejects them every write is refused or fails, and none
+/// succeeds.
+#[test]
+fn probe_under_faults() {
+    let resent = Arc::new(Mutex::new((0u64, 0u64, 0u64)));
+    let tally = resent.clone();
+    let seeds = seeds_from_env(300);
+    let r = run_seeds(seeds.clone(), move |mut env| {
+        let tally = tally.clone();
+        async move {
+            let mode = match env.rng.below(10) {
+                0 => Conditional::Ignore,
+                1 => Conditional::Reject,
+                _ => Conditional::Honour,
+            };
+            let mut rules = FaultRules::random(&mut env.rng);
+            rules.conditional = mode;
+            rules.resend_probes = env.rng.below(700) as f64 / 1000.0;
+            let clients = env.rng.range(1, 4) as usize;
+            let out: Arc<Mutex<Vec<String>>> = Arc::default();
+            let wrote = Arc::new(Mutex::new(0u64));
+            let mut futs: Vec<ClientFuture> = Vec::new();
+            for c in 0..clients {
+                let db = open_db(&env, c, &rules, Consistency::Strong, false, Duration::ZERO);
+                let (o, w) = (out.clone(), wrote.clone());
+                let mut rng = SimRng::new(env.seed ^ c as u64);
+                futs.push(Box::pin(async move {
+                    let fail = |m: String| o.lock().unwrap().push(format!("client {c}: {m}"));
+                    let db = match db.await {
+                        Ok(db) => db,
+                        // Opening reads the store; a fault may end it, but never with a verdict.
+                        Err(Error::ConditionalWritesUnsupported(m)) => {
+                            return fail(format!("refused at open on {mode:?}: {m}"));
+                        }
+                        Err(_) => return,
+                    };
+                    let name = format!("t{c}");
+                    for _ in 0..20 {
+                        let r = match db.open_table(&name).await {
+                            Ok(t) => t
+                                .append(vec![datagen::rows(&mut rng, "p", 2, None, 2)])
+                                .await
+                                .map(|_| ()),
+                            Err(_) => db
+                                .create_table(&name, datagen::row_schema(), options(false))
+                                .await
+                                .map(|_| ()),
+                        };
+                        match (mode, r) {
+                            (Conditional::Honour, Ok(())) => {
+                                *w.lock().unwrap() += 1;
+                                return;
+                            }
+                            (Conditional::Honour, Err(Error::ConditionalWritesUnsupported(m))) => {
+                                return fail(format!("an honouring store was refused: {m}"));
+                            }
+                            (Conditional::Honour, Err(_)) => {}
+                            (_, Ok(())) => {
+                                return fail(format!("a write succeeded on a {mode:?} store"));
+                            }
+                            (_, Err(_)) => {}
+                        }
+                    }
+                    if mode == Conditional::Honour {
+                        fail("no write succeeded in 20 attempts".into());
+                    }
+                }));
+            }
+            env.run(futs).await.map_err(|e| format!("{e:?}"))?;
+            let resends = env.faults.resent.load(std::sync::atomic::Ordering::Relaxed);
+            let lost = env.faults.ambiguous();
+            {
+                let mut t = tally.lock().unwrap();
+                t.0 += resends;
+                t.1 += lost;
+                t.2 += *wrote.lock().unwrap();
+            }
+            match out.lock().unwrap().first() {
+                Some(e) => Err(e.clone()),
+                None => Ok(()),
+            }
+        }
+    });
+    if let Err(f) = r {
+        panic!("{f}");
+    }
+    let (resends, lost, wrote) = *resent.lock().unwrap();
+    println!(
+        "RESULT probe_under_faults seeds={}..{} resent={resends} ambiguous={lost} wrote={wrote}",
+        seeds.start, seeds.end
+    );
+    assert!(resends > 0 && lost > 0 && wrote > 0);
 }

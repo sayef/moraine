@@ -13,7 +13,9 @@ use moraine::testing::{
     server_now,
 };
 use moraine_testkit::chaos::FaultCounts;
-use moraine_testkit::{ChaosStore, ClientClock, Conditional, FaultRules, SimClock, SimStore};
+use moraine_testkit::{
+    ChaosStore, ClientClock, Conditional, FaultRules, ProbeFault, SimClock, SimStore,
+};
 use object_store::{ObjectStore, ObjectStoreExt, PutMode, PutOptions};
 
 fn stack(rules: FaultRules) -> (Store, SimStore, Arc<FaultCounts>, SimClock) {
@@ -210,6 +212,77 @@ async fn s2_store_without_conditional_put_is_refused_for_writing() {
             _ => assert!(matches!(r, Err(Error::ConditionalWritesUnsupported(_)))),
         }
     }
+}
+
+/// D92: a probe write that is resent, or whose response is lost, must not decide the verdict.
+/// One fault on each probe write in turn (the five of an undisturbed probe, plus the next ones
+/// for the requests a fault adds): an honouring store stays writable, and a store that ignores
+/// or rejects conditional writes is still refused.
+#[tokio::test]
+async fn s2_probe_survives_a_resent_or_lost_request() {
+    for (mode, create, update) in [
+        (Conditional::Honour, Support::Honoured, Support::Honoured),
+        (Conditional::Ignore, Support::Ignored, Support::Ignored),
+        (Conditional::Reject, Support::Rejected, Support::Rejected),
+    ] {
+        for fault in [ProbeFault::Resent, ProbeFault::LostResponse] {
+            for at in 0..8 {
+                let rules = FaultRules {
+                    conditional: mode,
+                    probe_script: vec![(at, fault)],
+                    ..Default::default()
+                };
+                let case = format!("{mode:?}, {fault:?} on probe write {at}");
+                let (s, sim, _, _) = stack(rules.clone());
+                let clock = s.clock().clone();
+                let caps = probe_conditional_writes(
+                    s.object_store().as_ref(),
+                    &Path::from("meta"),
+                    clock.as_ref(),
+                )
+                .await
+                .unwrap_or_else(|e| panic!("{case}: {e}"));
+                assert_eq!((caps.create, caps.update), (create, update), "{case}");
+                assert!(
+                    sim.snapshot().is_empty(),
+                    "{case}: probe objects left behind"
+                );
+
+                let (s, _, _, _) = stack(rules);
+                let r = require_conditional_writes(
+                    s.object_store(),
+                    &Path::from(format!("meta-{mode:?}-{fault:?}-{at}")),
+                    s.clock().as_ref(),
+                )
+                .await;
+                match mode {
+                    Conditional::Honour => assert!(r.is_ok(), "{case}: {r:?}"),
+                    _ => assert!(
+                        matches!(r, Err(Error::ConditionalWritesUnsupported(_))),
+                        "{case}: {r:?}"
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// D92: with every probe write resent, the probe still finds an honouring store writable.
+#[tokio::test]
+async fn s2_probe_with_every_write_resent() {
+    let (s, _, faults, _) = stack(FaultRules {
+        resend_probes: 1.0,
+        ..Default::default()
+    });
+    let caps = probe_conditional_writes(
+        s.object_store().as_ref(),
+        &Path::from("meta"),
+        s.clock().as_ref(),
+    )
+    .await
+    .unwrap();
+    assert!(caps.can_write(), "{caps:?}");
+    assert!(faults.resent.load(std::sync::atomic::Ordering::Relaxed) >= 5);
 }
 
 #[tokio::test]
