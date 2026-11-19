@@ -235,3 +235,4 @@ them by name or number.
 16. `create_table_race`: identical and conflicting definitions.
 17. `store_without_conditional_put`: `ChaosStore` ignores conditions; open for writing is refused.
 18. `partial_listing`: listings are cut short at random; no collector deletes anything it should not, and readers never drop known sidecars.
+19. `probe_under_faults`: faults during open and the capability probe, with probe writes resent and their responses lost; an honouring store is never refused, an ignoring or rejecting one always is (D92).

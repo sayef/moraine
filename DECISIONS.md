@@ -2085,3 +2085,82 @@ the library, not the test.
 - **Benchmarks.** The exact-route runs in `docs/BENCH.md` with `min_file_age` 0 compacted under
   this bug: on S3, each pass left out the files written in about the second before it. I have not
   rerun them.
+
+## D92. The capability probe resolves resent and lost requests before it gives a verdict
+
+The probe (case S2) wrote an object, then sent conditional writes whose answers it took at face
+value. A request can be sent twice, though: object_store resends any request after a 5xx or,
+for idempotent ones, a timeout, and kv0's fault-injecting store does the same. When the
+compare-and-swap with the correct ETag took effect and its response was lost, the second send
+met the probe's own write, got a precondition failure, and the probe concluded that the store
+refuses a correct ETag. The handle then cached `compare-and-swap Rejected`, and every write in
+the process failed with `ConditionalWritesUnsupported` ("open it read-only"). On S3 a single
+network blip during the first write was enough. A resent first create failed the probe outright
+with `AlreadyExists`.
+
+- **Every probe request writes its own content.** The payloads name the round's random nonce and
+  the step, so a read-back tells which request the object holds.
+- **An answer a resend or a lost response could explain is checked first.** For the creates,
+  `AlreadyExists` and an open outcome; for the stale update, an open outcome; for the
+  compare-and-swap, a precondition failure and an open outcome. Open means what the commit path
+  calls open (`AttemptError::from_store_is_open`): ambiguous classes and errors that name no
+  class. The probe then reads the object back: its own content of that request means the write
+  took effect (for the compare-and-swap, `Honoured`; for a create on an existing object or a
+  stale update, `Ignored`); the content before it means the request did not take effect, and
+  it is sent again, up to three times, with the ETag the store now reports.
+- **Only a verified refusal is a rejection.** `Rejected` for compare-and-swap needs a
+  precondition failure and a read-back showing the object unchanged at exactly the ETag the
+  request carried. `NotImplemented` and `NotSupported` stay definite rejections.
+- **An outcome that stays unknown is no verdict.** It is reported as an ambiguous storage
+  error, the round starts again with fresh names, and after three rounds the write that needed
+  the probe fails with that error. Nothing is cached, so the next write probes again. I chose
+  that over retrying longer, because a store that keeps losing responses fails every write
+  anyway.
+- **Tests.** `ChaosStore` can now resend probe writes (`resend_probes`) or script a lost
+  response or a resend on the nth probe write (`probe_script`).
+  `s2_probe_survives_a_resent_or_lost_request` (`tests/store_layer.rs`) puts each fault on each
+  probe write in turn, against stores that honour, ignore and reject conditional writes: the
+  first is always writable, the other two are always refused. Without the fix it fails on the
+  first case. Scenario 19, `probe_under_faults` (`tests/tables_sim.rs`), opens databases and
+  writes under random faults with resent probe writes, and checks that an honouring store is
+  never refused and an ignoring or rejecting one never accepts a write.
+
+## D93. A purge orders its own handle's commits by version, not by timestamp
+
+A purge collects a removed file when the entry that removed it was committed before the cutoff,
+and the default cutoff is the purge's start. Both sides of that comparison came from
+last-modified times: the entry's own, and server time from a probe object (D91 describes the
+lag). Last-modified times are truncated to their resolution, one second on S3 and a few
+milliseconds on a local file system, so an entry committed just before the purge often carried
+the same timestamp as the purge's start and was not "before" it. A purge right after the
+caller's own rewrite then skipped the files that rewrite removed, and with `erase` left their
+values on disk. kv0 waited 25 ms on local disk and 1.1 s on S3 before every erasure to get
+around it.
+
+I considered two fixes. Adding the store's timestamp resolution to the cutoff collects the
+caller's own removals, but also removals committed up to two resolutions after the cutoff,
+which readers that loaded a snapshot after the cutoff may still hold; that breaks the caller's
+statement, which is all a purge relies on. Measuring or configuring the resolution per store
+only moves the error around. What the handle knows for certain is order: every version it had
+loaded or committed when the purge was called was committed before the purge started, whoever
+wrote it.
+
+- **The rule.** The purge notes the version in hand when it is called. When the cutoff is the
+  purge's start (no `removed_before`, or one at or after the start), an entry at or before that
+  version counts as removed before the cutoff, whatever its timestamp; other entries are
+  compared by timestamp as before. An earlier `removed_before` is a statement about a time, not
+  about versions, so it keeps the timestamp comparison.
+- **Nothing in flight is collected.** The rule only widens which committed removals count, and
+  only to commits that finished before the purge began. Files no entry removed still go only by
+  vacuum's grace-period rule, so uploads of commits in flight stay. The purge does not refresh
+  to raise the version: a refresh during the purge can find commits made after it started.
+- **Callers.** A purge right after the caller's own rewrite on the same handle collects and
+  erases at once. Another handle should refresh first; what the refresh loads then counts.
+- **Tests.** `SimStore::with_mtime_resolution` truncates last-modified times.
+  `a_purge_right_after_a_rewrite_ignores_timestamp_resolution` (`tests/purge.rs`) deletes a row
+  and purges with erasure 300 ms later in the same store second; it fails without the fix with
+  nothing collected. `purges_everywhere` truncates to whole seconds on half the seeds. Its last
+  client no longer sleeps a second before the final purge: it purges once (so its server clock
+  is a cached probe, lagging as it does in a long-running process), waits under two seconds,
+  refreshes, deletes the rows of one group and purges with erasure at once. Without the fix
+  the first seed already leaves a file the delete removed.

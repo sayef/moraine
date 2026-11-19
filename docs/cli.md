@@ -4,6 +4,9 @@
 [maintenance](guides/maintenance.md) jobs from a shell or a scheduled job, for deployments whose
 application processes are too short-lived to run them.
 
+The library is on crates.io; the command is not published there, so install it from the
+repository:
+
 ```sh
 cargo install --git https://github.com/sayef/moraine moraine-cli
 ```

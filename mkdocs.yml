@@ -107,6 +107,7 @@ nav:
       - Reading files and rows: guides/reading-files.md
       - Maintenance: guides/maintenance.md
   - Reference:
+      - API reference (docs.rs): https://docs.rs/morainedb
       - The moraine command: cli.md
       - On-disk format: FORMAT.md
       - Versioning policy: SEMVER.md

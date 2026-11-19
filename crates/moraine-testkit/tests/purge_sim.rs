@@ -2,7 +2,9 @@
 //! versions, read, run maintenance passes (compaction, checkpoints every two versions, log
 //! cleanup and vacuum, leases on or off), and purge, with or without erasure and with a cutoff
 //! now or a minute back, all at once, with random faults on some seeds and simulated minutes
-//! passing between operations. Once they stop, one more client purges with erasure.
+//! passing between operations. Once they stop, one more client purges, waits under two
+//! seconds, refreshes, deletes the rows of one group, and at once purges with erasure. On half the seeds the store keeps last-modified times in whole seconds, as S3
+//! does, so a commit and the purge after it often share a timestamp (D93).
 //!
 //! Checked from the store's full history, without moraine:
 //!
@@ -181,6 +183,7 @@ async fn client(
 /// The client that purges with erasure once the others are done, then reads.
 async fn last(
     t: Table,
+    seed: u64,
     done: Arc<AtomicUsize>,
     clients: usize,
     clock: Arc<moraine_testkit::ClientClock>,
@@ -190,7 +193,23 @@ async fn last(
     while done.load(Ordering::SeqCst) < clients {
         clock.sleep(Duration::from_secs(1)).await;
     }
-    clock.sleep(Duration::from_secs(1)).await;
+    // A purge first, so the handle's server clock is a cached probe that lags by up to the
+    // store's timestamp resolution, as it often is in a long-running process; then a pause
+    // that ends anywhere within the next two seconds.
+    let _ = t.purge(&Purge::new()).await;
+    clock
+        .sleep(Duration::from_millis(
+            moraine::testing::splitmix64(seed ^ 0x1A57) % 2000,
+        ))
+        .await;
+    // No pause before the purge: what the refresh loaded and the delete committed was
+    // committed before it starts, whatever the store's timestamps say (D93).
+    t.refresh()
+        .await
+        .map_err(|e| format!("the last refresh failed: {e:?}"))?;
+    t.delete(moraine::expr::col("g").eq(moraine::expr::lit(0i64)))
+        .await
+        .map_err(|e| format!("the last delete failed: {e:?}"))?;
     // A purge whose lease another (crashed or slow) client still holds waits it out.
     let mut report = None;
     for _ in 0..20 {
@@ -414,6 +433,11 @@ fn check(env: &SimEnv, seen: &Seen) -> Result<(), String> {
 }
 
 async fn scenario(mut env: SimEnv, totals: Arc<Mutex<Totals>>) -> Result<(), String> {
+    // Chosen from the seed, not drawn, so every other choice of a seed stays as it was.
+    if moraine::testing::splitmix64(env.seed).is_multiple_of(2) {
+        env.store = moraine_testkit::SimStore::new(env.clock.clone())
+            .with_mtime_resolution(Duration::from_secs(1));
+    }
     let clients = env.rng.range(2, 4) as usize;
     let ops = env.rng.range(4, 12) as usize;
     let faults = env.rng.chance(0.4);
@@ -440,9 +464,10 @@ async fn scenario(mut env: SimEnv, totals: Arc<Mutex<Totals>>) -> Result<(), Str
     }
     let db = open(&env, clients, &FaultRules::default());
     let (clock, seen2, f2) = (env.client_clock(clients), seen.clone(), failure.clone());
+    let seed = env.seed;
     futs.push(Box::pin(async move {
         let r = match table(db.await).await {
-            Some(t) => last(t, done, clients, clock, seen2).await,
+            Some(t) => last(t, seed, done, clients, clock, seen2).await,
             None => Err("the last client could not open the table".into()),
         };
         if let Err(e) = r {

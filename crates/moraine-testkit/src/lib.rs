@@ -29,7 +29,7 @@ pub mod text;
 pub mod toykind;
 pub mod vectors;
 
-pub use chaos::{ChaosStore, Conditional, FaultRules};
+pub use chaos::{ChaosStore, Conditional, FaultRules, ProbeFault};
 pub use clock::{ClientClock, SimClock};
 pub use rng::SimRng;
 pub use sched::Scheduler;
