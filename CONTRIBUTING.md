@@ -110,3 +110,19 @@ uv run --no-project --with fonttools --with brotli python bench/charts/build.py
 - Describe what changed and why in the pull request, and link the issue.
 - Update [`CHANGELOG.md`](CHANGELOG.md) under `Unreleased` for anything a user of the crate
   would notice.
+
+## Releasing
+
+Releases are cut by [release-plz](https://release-plz.dev) (`.github/workflows/release-plz.yml`)
+and stay off until the repository variable `RELEASE_ENABLED` is `true`. With it on, every push to
+`main` updates a release pull request (version and `CHANGELOG.md`); merging that pull request
+publishes `morainedb` to crates.io, tags `v<version>` and creates the GitHub release.
+
+- **Betas.** The first versions are betas toward 0.1.0 (`0.1.0-beta.N`). From a pre-release,
+  release-plz bumps the last number (`0.1.0-beta.1` to `0.1.0-beta.2`), and a version with a
+  pre-release part becomes a GitHub pre-release.
+- **0.1.0.** release-plz never leaves a pre-release on its own, so I set the version explicitly:
+  a pull request that sets `version = "0.1.0"` in the workspace manifest and runs
+  `cargo update -w`. Once it is merged, the next release pull request releases 0.1.0.
+- The notes under `## [Unreleased]` in `CHANGELOG.md` become the release's entry: release-plz only
+  adds the version heading.
