@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Nothing is released yet. The first release will contain the following.
+The first release, published as betas (0.1.0-beta.N) before 0.1.0, contains the following.
 
 ### Added
 
