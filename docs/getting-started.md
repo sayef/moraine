@@ -11,13 +11,17 @@ Moving it to S3 changes one line. A second, shorter program adds a vector index 
 
 ## Add the dependencies
 
-moraine is not on crates.io yet; depend on the repository. The crate is `morainedb` and the
-library is `moraine`. Use the same `arrow` version as moraine, or the record batch types will not
-match.
+moraine is on crates.io as a beta. The crate is `morainedb` and the library is `moraine`. Use
+the same `arrow` version as moraine, or the record batch types will not match. Cargo picks a beta
+only when you name it, so give the full version:
+
+```sh
+cargo add morainedb@0.1.0-beta.2
+```
 
 ```toml
 [dependencies]
-morainedb = { git = "https://github.com/sayef/moraine" }
+morainedb = "0.1.0-beta.2"
 arrow = "=59.3.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -30,6 +34,10 @@ Cargo features of `morainedb`, all off by default:
 | `vector` | The `vec-hnsw` vector index (usearch) |
 | `turbovec` | The `vec-tq` vector index (TurboQuant through turbovec) |
 | `fts` | The `fts` full-text index (tantivy), `search_text`, and with a vector kind `search_hybrid` |
+
+Turn features on with `cargo add`, for example
+`cargo add morainedb@0.1.0-beta.2 --features vector,fts`. The API reference for every type is on
+[docs.rs](https://docs.rs/morainedb).
 
 ## The program
 
@@ -212,7 +220,7 @@ are JSON:
 
 ```toml
 [dependencies]
-morainedb = { git = "https://github.com/sayef/moraine", features = ["vector"] }
+morainedb = { version = "0.1.0-beta.2", features = ["vector"] }
 serde_json = "1"
 ```
 
@@ -313,7 +321,7 @@ and caching sidecars, and the TurboQuant kind.
 Full-text search needs the `fts` feature (tantivy):
 
 ```toml
-morainedb = { git = "https://github.com/sayef/moraine", features = ["fts"] }
+morainedb = { version = "0.1.0-beta.2", features = ["fts"] }
 ```
 
 ```rust

@@ -5,12 +5,19 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://crates.io/crates/morainedb"><img alt="crates.io" src="https://img.shields.io/crates/v/morainedb?include_prereleases&label=crates.io&style=flat-square&labelColor=3B2A0C&color=835A00"></a>
+  <a href="https://docs.rs/morainedb"><img alt="docs.rs" src="https://img.shields.io/docsrs/morainedb?label=docs.rs&style=flat-square&labelColor=3B2A0C"></a>
+  <a href="https://github.com/sayef/moraine/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/sayef/moraine/ci.yml?branch=main&label=CI&style=flat-square&labelColor=3B2A0C"></a>
+</p>
+
 **moraine is a Rust library for many processes writing and reading the same tables on S3 or local
 disk, with no server: a commit is one conditional PUT of the next Delta Lake log entry.**
 moraine is pre-1.0; the API may still change.
 
 [Documentation](https://morainedb.pages.dev) |
 [Getting started](https://morainedb.pages.dev/getting-started/) |
+[API reference](https://docs.rs/morainedb) |
 [Benchmarks](https://morainedb.pages.dev/benchmarks/) |
 [Design decisions](DECISIONS.md)
 
@@ -83,12 +90,16 @@ difference. Per-workload charts, exact numbers and the method:
 
 ## Quick start
 
-moraine is not on crates.io yet. The crate is `morainedb` and the library is `moraine`; use the
-same `arrow` version (59.3.2).
+moraine is on crates.io as a beta. The crate is `morainedb` and the library is `moraine`; use
+the same `arrow` version (59.3.2). The API reference is on [docs.rs](https://docs.rs/morainedb).
+
+```sh
+cargo add morainedb@0.1.0-beta.2
+```
 
 ```toml
 [dependencies]
-morainedb = { git = "https://github.com/sayef/moraine" }
+morainedb = "0.1.0-beta.2"
 arrow = "=59.3.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```

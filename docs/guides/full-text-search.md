@@ -10,8 +10,8 @@ The full-text kind, `fts`, is behind a cargo feature; hybrid search needs a vect
 
 ```toml
 [dependencies]
-morainedb = { git = "https://github.com/sayef/moraine", features = ["fts", "vector"] }
-serde_json = "1"                                                                  # index parameters
+morainedb = { version = "0.1.0-beta.2", features = ["fts", "vector"] }
+serde_json = "1"                                                         # index parameters
 ```
 
 `fts` builds one [tantivy](https://github.com/quickwit-oss/tantivy) index per data file. Every

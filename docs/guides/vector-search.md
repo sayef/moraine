@@ -9,9 +9,9 @@ Vector kinds are behind cargo features:
 
 ```toml
 [dependencies]
-morainedb = { git = "https://github.com/sayef/moraine", features = ["vector"] }   # vec-hnsw (usearch)
+morainedb = { version = "0.1.0-beta.2", features = ["vector"] }   # vec-hnsw (usearch)
 # features = ["turbovec"] adds vec-tq (TurboQuant); both can be on
-serde_json = "1"                                                                # index parameters
+serde_json = "1"                                                  # index parameters
 ```
 
 `vec-hnsw` is the one to start with. In the D24 benchmark it answered faster than `vec-tq`
