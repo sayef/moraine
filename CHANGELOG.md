@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The capability probe no longer refuses a store that honours conditional writes when one of
+  its requests is resent or loses its response (a single network blip on S3). It reads the
+  object back to tell its own write from a refusal, and gives no verdict while the outcome is
+  unknown; stores that ignore or reject conditional writes are still refused (D92).
+- `Table::purge` right after a rewrite on the same handle collects and erases the files the
+  rewrite removed, without waiting for the store's last-modified times (whole seconds on S3) to
+  move past it (D93).
+
+### Changed
+
+- Install instructions use the crates.io release (`morainedb = "0.1.0-beta.2"`); the README
+  links the crate, the API reference on docs.rs and CI.
+
 ## [0.1.0-beta.1](https://github.com/sayef/moraine/releases/tag/v0.1.0-beta.1) - 2026-11-19
 
 The first release, published as betas (0.1.0-beta.N) before 0.1.0, contains the following.

@@ -3541,7 +3541,7 @@ dependencies = [
 
 [[package]]
 name = "moraine-cli"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "arrow",
  "morainedb",
@@ -3551,7 +3551,7 @@ dependencies = [
 
 [[package]]
 name = "moraine-spike"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "arrow",
  "async-trait",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "moraine-testkit"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "arrow",
  "async-trait",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "morainedb"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "arrow",
  "async-trait",
