@@ -2124,3 +2124,43 @@ with `AlreadyExists`.
   first case. Scenario 19, `probe_under_faults` (`tests/tables_sim.rs`), opens databases and
   writes under random faults with resent probe writes, and checks that an honouring store is
   never refused and an ignoring or rejecting one never accepts a write.
+
+## D93. A purge orders its own handle's commits by version, not by timestamp
+
+A purge collects a removed file when the entry that removed it was committed before the cutoff,
+and the default cutoff is the purge's start. Both sides of that comparison came from
+last-modified times: the entry's own, and server time from a probe object (D91 describes the
+lag). Last-modified times are truncated to their resolution, one second on S3 and a few
+milliseconds on a local file system, so an entry committed just before the purge often carried
+the same timestamp as the purge's start and was not "before" it. A purge right after the
+caller's own rewrite then skipped the files that rewrite removed, and with `erase` left their
+values on disk. kv0 waited 25 ms on local disk and 1.1 s on S3 before every erasure to get
+around it.
+
+I considered two fixes. Adding the store's timestamp resolution to the cutoff collects the
+caller's own removals, but also removals committed up to two resolutions after the cutoff,
+which readers that loaded a snapshot after the cutoff may still hold; that breaks the caller's
+statement, which is all a purge relies on. Measuring or configuring the resolution per store
+only moves the error around. What the handle knows for certain is order: every version it had
+loaded or committed when the purge was called was committed before the purge started, whoever
+wrote it.
+
+- **The rule.** The purge notes the version in hand when it is called. When the cutoff is the
+  purge's start (no `removed_before`, or one at or after the start), an entry at or before that
+  version counts as removed before the cutoff, whatever its timestamp; other entries are
+  compared by timestamp as before. An earlier `removed_before` is a statement about a time, not
+  about versions, so it keeps the timestamp comparison.
+- **Nothing in flight is collected.** The rule only widens which committed removals count, and
+  only to commits that finished before the purge began. Files no entry removed still go only by
+  vacuum's grace-period rule, so uploads of commits in flight stay. The purge does not refresh
+  to raise the version: a refresh during the purge can find commits made after it started.
+- **Callers.** A purge right after the caller's own rewrite on the same handle collects and
+  erases at once. Another handle should refresh first; what the refresh loads then counts.
+- **Tests.** `SimStore::with_mtime_resolution` truncates last-modified times.
+  `a_purge_right_after_a_rewrite_ignores_timestamp_resolution` (`tests/purge.rs`) deletes a row
+  and purges with erasure 300 ms later in the same store second; it fails without the fix with
+  nothing collected. `purges_everywhere` truncates to whole seconds on half the seeds. Its last
+  client no longer sleeps a second before the final purge: it purges once (so its server clock
+  is a cached probe, lagging as it does in a long-running process), waits under two seconds,
+  refreshes, deletes the rows of one group and purges with erasure at once. Without the fix
+  the first seed already leaves a file the delete removed.

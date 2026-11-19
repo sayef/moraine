@@ -11,7 +11,9 @@
 //!    files removed by entries after P (they were live at P, which stays pinnable).
 //! 2. **Collect now.** A listed data file outside the keep set goes when the entry that removed
 //!    it (at or before P) was committed before the cutoff: the caller's statement that no
-//!    reader holds a snapshot loaded before it. A file no walked entry removed is an orphan or
+//!    reader holds a snapshot loaded before it. When the cutoff is the purge's start, an entry
+//!    this handle had loaded or committed before the purge started was committed before it,
+//!    whatever its timestamp says (D93). A file no walked entry removed is an orphan or
 //!    a removal older than the walk, and goes by vacuum's rule (older than the grace period),
 //!    so an upload of a commit in flight is never taken. The blobs only collected files
 //!    reference and the collected files' sidecars go with them, whatever their age.
@@ -72,7 +74,9 @@ impl Default for Purge {
 
 impl Purge {
     /// Collects every file removed by a commit before the purge starts: the caller states
-    /// that no reader holds a snapshot loaded before then.
+    /// that no reader holds a snapshot loaded before then. A commit this handle made or loaded
+    /// before calling the purge counts, so a purge right after the caller's own rewrite collects
+    /// what it removed, without waiting for the store's clock.
     pub fn new() -> Purge {
         Purge::default()
     }
@@ -139,6 +143,8 @@ impl Table {
 
 impl TableInner {
     pub(crate) async fn purge(self: &Arc<Self>, p: &Purge) -> Result<PurgeReport> {
+        // Every version up to this one was committed before the purge started (D93).
+        let seen = self.current().version;
         let now = self.server_time().await?;
         let leases = self.leases(&self.db.writer_id);
         let Some(lease) = leases.acquire("purge", p.lease_ttl, now).await? else {
@@ -146,7 +152,7 @@ impl TableInner {
                 job: "purge".into(),
             });
         };
-        let r = self.purge_leased(p, now, lease.fence()).await;
+        let r = self.purge_leased(p, now, seen, lease.fence()).await;
         let at = self.server_time().await.unwrap_or(now);
         let _ = self.leases(&self.db.writer_id).release(&lease, at).await;
         r
@@ -156,10 +162,17 @@ impl TableInner {
         self: &Arc<Self>,
         p: &Purge,
         now: DateTime<Utc>,
+        seen: u64,
         fence: crate::log::TxnId,
     ) -> Result<PurgeReport> {
         let mut report = PurgeReport::default();
         let cutoff = p.removed_before.map_or(now, |t| t.min(now));
+        // Server time comes from last-modified times, which lag by up to their resolution (a
+        // second on S3), so an entry committed just before the purge can look as old as its
+        // start. When the cutoff is the start, the entries this handle had in hand then were
+        // committed before it: their order is known, their timestamps are not needed (D93).
+        let from_start = cutoff == now;
+        let before_cutoff = |at: DateTime<Utc>, v: u64| at < cutoff || (from_start && v <= seen);
         self.change_indexes(crate::table::Change::Purge(Some(fence)))
             .await?;
         fail::fail_point!("moraine::purge::after_marker");
@@ -177,7 +190,7 @@ impl TableInner {
         }
         // Entries newest first: removals with the entry's server time, and the versions an
         // erasure rewrites. Without erasure the walk ends at the grace period, as vacuum's.
-        let mut removed: HashMap<String, DateTime<Utc>> = HashMap::new();
+        let mut removed: HashMap<String, (DateTime<Utc>, u64)> = HashMap::new();
         let mut walked: Vec<u64> = Vec::new();
         let mut v = snap.version;
         while v > 0 {
@@ -192,7 +205,7 @@ impl TableInner {
                 }
                 walked.push(v);
                 for r in e.removes {
-                    removed.entry(r).or_insert(at);
+                    removed.entry(r).or_insert((at, v));
                 }
             }
             v -= 1;
@@ -222,7 +235,7 @@ impl TableInner {
                 continue;
             }
             let goes = match removed.get(&path) {
-                Some(at) => *at < cutoff,
+                Some(&(at, v)) => before_cutoff(at, v),
                 None => m.last_modified < grace_cut,
             };
             if goes {
@@ -255,7 +268,7 @@ impl TableInner {
         // Erase: what was removed before the cutoff and is not kept, collected now or before.
         let erased: HashSet<String> = removed
             .iter()
-            .filter(|(path, at)| **at < cutoff && !keep.contains(*path))
+            .filter(|&(path, &(at, v))| before_cutoff(at, v) && !keep.contains(path))
             .map(|(path, _)| path.clone())
             .chain(doomed_paths)
             .collect();

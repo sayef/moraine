@@ -4,6 +4,9 @@
 //! last-modified times come from the [`SimClock`] (so tests can move past a grace period), the
 //! contents are in ordered maps (so listings and every decision depend on the seed only), and
 //! [`SimStore::snapshot`] exposes the contents for invariant checks.
+//!
+//! [`SimStore::with_mtime_resolution`] truncates last-modified times as real stores do (whole
+//! seconds on S3), so they lag the server's clock by up to that resolution.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -54,6 +57,7 @@ pub struct Archived {
 pub struct SimStore {
     inner: Arc<Mutex<Inner>>,
     clock: SimClock,
+    mtime_resolution: std::time::Duration,
 }
 
 impl fmt::Debug for SimStore {
@@ -77,7 +81,26 @@ impl SimStore {
         SimStore {
             inner: Arc::default(),
             clock,
+            mtime_resolution: std::time::Duration::ZERO,
         }
+    }
+
+    /// Last-modified times truncated to multiples of `resolution` since the simulation's
+    /// epoch (one second for S3). Zero, the default, keeps them exact.
+    pub fn with_mtime_resolution(mut self, resolution: std::time::Duration) -> Self {
+        self.mtime_resolution = resolution;
+        self
+    }
+
+    /// The last-modified time the store records for a write at `now`.
+    fn stamp(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+        let r = self.mtime_resolution.as_nanos();
+        if r == 0 {
+            return now;
+        }
+        let since = self.clock.now().as_nanos();
+        let lag = since % r;
+        now - chrono::Duration::nanoseconds(lag as i64)
     }
 
     pub fn clock(&self) -> &SimClock {
@@ -167,7 +190,7 @@ impl SimStore {
             Entry {
                 data,
                 e_tag: n,
-                last_modified: now,
+                last_modified: self.stamp(now),
             },
         );
         Ok(PutResult {

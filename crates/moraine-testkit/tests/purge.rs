@@ -181,6 +181,60 @@ async fn the_cutoff_keeps_later_removals() {
     assert!(later.iter().all(|f| data.contains(f)));
 }
 
+/// D93: last-modified times in whole seconds, as on S3, put the delete and the purge's server
+/// time in the same second. The purge right after the caller's own rewrite must still collect
+/// and erase what the rewrite removed, without waiting for the clock, and leave an upload of a
+/// commit in flight alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_purge_right_after_a_rewrite_ignores_timestamp_resolution() {
+    let _turn = TURN.lock().await;
+    let mut env = Env::new(30);
+    env.store =
+        Arc::new(SimStore::new(env.sim.clone()).with_mtime_resolution(Duration::from_secs(1)));
+    env.sim.advance(Duration::from_millis(300));
+    let t = env
+        .db()
+        .await
+        .create_table(
+            "t",
+            moraine_testkit::datagen::row_schema(),
+            TableOptions::default(),
+        )
+        .await
+        .unwrap();
+    t.append(vec![batch(&[row("a", "keep"), row(SECRET, "gone")])])
+        .await
+        .unwrap();
+    t.append(vec![batch(&[row("b", "keep")])]).await.unwrap();
+    let before = files(&t);
+    t.delete(col("k").eq(lit(SECRET))).await.unwrap();
+    let removed: BTreeSet<String> = before.difference(&files(&t)).cloned().collect();
+    assert_eq!(removed.len(), 1);
+    let in_flight = "part-in-flight.parquet";
+    env.store
+        .put(
+            &Path::from(format!("db/t/data/{in_flight}")),
+            PutPayload::from(Bytes::from_static(b"PAR1")),
+        )
+        .await
+        .unwrap();
+    // Still the same second on the store's clock.
+    env.sim.advance(Duration::from_millis(300));
+    let r = t.purge(&Purge::new().erase()).await.unwrap();
+    assert_eq!(r.files_deleted, 1, "{r:?}");
+    assert_eq!(r.files_erased, 1, "{r:?}");
+    let data = env.data();
+    assert!(removed.iter().all(|f| !data.contains(f)), "{data:?}");
+    assert!(files(&t).iter().all(|f| data.contains(f)));
+    assert!(data.contains(in_flight));
+    assert!(!env.log_holds(SECRET));
+    let rows = to_rows(&t.scan().collect().await.unwrap());
+    assert_eq!(
+        rows.iter().map(|r| r.k.as_str()).collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn erasure_takes_values_out_of_the_log() {
     let _turn = TURN.lock().await;
