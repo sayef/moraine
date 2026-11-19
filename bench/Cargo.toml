@@ -1,0 +1,44 @@
+# The comparison harness (DECISIONS.md D22). A workspace of its own: it builds kv0 with both of
+# its engines (Lance and Delta Lake), which the library workspace must not depend on, so
+# `cargo clippy --workspace` at the root never compiles Lance. It shares the root's target
+# directory (.cargo/config.toml), so no second target tree is created.
+[workspace]
+
+[package]
+name = "moraine-bench"
+description = "Runs identical workloads on Lance and Delta Lake (through kv0) and on moraine."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+[[bin]]
+name = "moraine-bench"
+path = "src/main.rs"
+
+[dependencies]
+# Read-only use of the sibling project, with both engines (`KV0_ENGINE=lance|delta`).
+kv0 = { path = "../../kv0/crates/kv0", default-features = false, features = ["aws", "delta"] }
+morainedb = { path = "../crates/moraine", features = ["vector", "turbovec", "fts"] }
+# The merged reference index of the full-text benchmark (D46): tantivy as moraine pins it.
+tantivy = { version = "=0.27.0" }
+# The D24 reference: Lance's vector index, from the same Lance kv0 builds (`vector-d24`).
+lance = { version = "=14.0.2", default-features = false }
+lance-index = { version = "=14.0.2", default-features = false }
+lance-linalg = { version = "=14.0.2", default-features = false }
+object_store = { version = "=0.13.2", features = ["aws"] }
+# The blob benchmark's raw PUT ceiling builds a store from the table's URL. Already in the graph
+# through object_store.
+url = "=2.5.8"
+futures = "=0.3.34"
+# moraine's Arrow (kv0 brings its own, older one for Lance).
+arrow = { version = "=59.3.2" }
+serde_json = "1"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "process", "sync"] }
+
+# Measurements use release builds only. No LTO: both engines are compiled into the same binary
+# with the same settings, which is what the comparison needs, and LTO would add many minutes to
+# a build that is deleted after each measurement.
+[profile.release]
+debug = false

@@ -1,0 +1,9 @@
+/target
+*.bak
+*.tmp
+/spike/out/
+/bench-work/
+/bench-results*.jsonl
+/site/
+/assets/src/.cache/
+__pycache__/

@@ -1,0 +1,99 @@
+name: Cloud nightly
+
+# T7 (docs/design/test-ids.md): the public API scenario suite and an 8-process stress run against real
+# cloud object stores. Credentials come from OpenID Connect only; no account id, role or
+# bucket is written here. Every job skips cleanly while its repository variables are unset.
+#
+# AWS S3 (the store moraine supports today):
+#   vars.MORAINE_AWS_ROLE_ARN   role to assume through OIDC (trust: this repository, main and
+#                               workflow_dispatch); needs s3:GetObject, PutObject,
+#                               PutObjectTagging, DeleteObject and ListBucket on the bucket
+#   vars.MORAINE_AWS_REGION     the bucket's region
+#   vars.MORAINE_S3_LOCATION    s3://<bucket>/<prefix>; give the prefix a lifecycle rule that
+#                               expires objects after a day, since each run leaves its tables
+#
+# Google Cloud Storage and Azure Blob Storage: moraine supports only the `aws` and `fs` stores
+# today (the `gcs` and `azure` cargo features are placeholders). Their jobs are here so the
+# matrix is complete, and skip until moraine supports them and their variables are set.
+
+on:
+  schedule:
+    # 02:41 UTC, after the nightly workflow's simulation shards have started.
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-nightly
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  s3:
+    if: vars.MORAINE_AWS_ROLE_ARN != '' && vars.MORAINE_S3_LOCATION != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MORAINE_T7_S3_LOCATION: ${{ vars.MORAINE_S3_LOCATION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: cloud-nightly
+      # Build before taking credentials, so the session is spent on the tests.
+      - run: cargo test --release -p moraine-testkit --test backends --no-run
+      - run: cargo test --release -p moraine-cli --test t8 --no-run
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.MORAINE_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.MORAINE_AWS_REGION }}
+          role-session-name: moraine-cloud-nightly
+          role-duration-seconds: 3600
+      - name: Scenario suite on S3
+        run: cargo test --release -p moraine-testkit --test backends real_s3 -- --nocapture
+      - name: 8-process stress on S3 (T7 and T8)
+        run: |
+          export MORAINE_T8_SECONDS=600 MORAINE_T8_PROCESSES=8 MORAINE_T8_SEED="$GITHUB_RUN_ID"
+          export MORAINE_T8_LOCATION="${MORAINE_T7_S3_LOCATION%/}/t8-$GITHUB_RUN_ID"
+          mkdir -p replay
+          echo "MORAINE_T8_SEED=$MORAINE_T8_SEED location=$MORAINE_T8_LOCATION commit=$GITHUB_SHA" \
+            > replay/t8.txt
+          set -o pipefail
+          cargo test --release -p moraine-cli --test t8 -- --ignored --nocapture 2>&1 \
+            | tee replay/output.txt
+      - if: failure()
+        run: tail -n 300 replay/output.txt > replay/tail.txt || true
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: replay-cloud-s3
+          path: replay/
+          retention-days: 30
+
+  # Placeholders: moraine has no GCS or Azure store yet, so these skip even with their
+  # variables set (MORAINE_GCS_ENABLED and MORAINE_AZURE_ENABLED are reserved for when it does).
+  gcs:
+    if: vars.MORAINE_GCS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "moraine does not support Google Cloud Storage yet (stores today are aws and fs); skipping."
+
+  azure:
+    if: vars.MORAINE_AZURE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "moraine does not support Azure Blob Storage yet (stores today are aws and fs); skipping."

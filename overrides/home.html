@@ -1,0 +1,13 @@
+{% extends "main.html" %}
+
+{% block htmltitle %}
+  <title>moraine: a multi-writer database on object storage</title>
+{% endblock %}
+
+{#- The home page: the page's own Markdown (docs/index.md) in a wider, composed layout, without
+    the edit button and the sidebars. -#}
+{% block content %}
+  <div class="mr-home">
+    {{ page.content }}
+  </div>
+{% endblock %}

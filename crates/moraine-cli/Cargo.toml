@@ -1,0 +1,22 @@
+[package]
+name = "moraine-cli"
+description = "Operator tool for moraine tables: inspect, verify, maintain, gc, bench."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "moraine"
+path = "src/main.rs"
+
+[dependencies]
+morainedb = { workspace = true }
+arrow = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

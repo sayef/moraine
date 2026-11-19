@@ -1,0 +1,368 @@
+{
+  "checkpoints": [
+    [
+      "db/t/data/_delta_log/00000000000000000005.checkpoint.parquet",
+      3
+    ]
+  ],
+  "inbox": [
+    [
+      "db/v/meta/inbox/moraine.inbox.d7599677879feaeabcd4dd2543bf3fd8/00000000000000000001.arrow",
+      8
+    ]
+  ],
+  "last_checkpoint": [
+    [
+      "db/t/data/_delta_log/_last_checkpoint",
+      5
+    ]
+  ],
+  "leases": [
+    [
+      "db/t/meta/leases/golden/00000000000000000001.json",
+      1,
+      "d7599677879feaeabcd4dd2543bf3fd8",
+      300000
+    ]
+  ],
+  "pin_manifests": [
+    [
+      "db/t/meta/pins/golden/00000000000000000006.json",
+      3
+    ]
+  ],
+  "sidecars": [
+    [
+      "db/v/idx/part-e538131cd372cc97861bc3ad391d2a63.parquet/emb.ff0c01b401ddcbb2.osix",
+      1
+    ]
+  ],
+  "t": {
+    "columns": [
+      "k",
+      "op",
+      "i",
+      "g",
+      "note"
+    ],
+    "log_files": 3,
+    "pinned_rows": 50,
+    "pins": {
+      "golden": 6
+    },
+    "rows": [
+      {
+        "g": 0,
+        "i": 12,
+        "k": "key-0012",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 15,
+        "k": "key-0015",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 18,
+        "k": "key-0018",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 24,
+        "k": "key-0024",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 27,
+        "k": "key-0027",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 3,
+        "k": "key-0003",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 30,
+        "k": "key-0030",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 33,
+        "k": "key-0033",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 36,
+        "k": "key-0036",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 39,
+        "k": "key-0039",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 45,
+        "k": "key-0045",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 48,
+        "k": "key-0048",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 51,
+        "k": "key-0051",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 54,
+        "k": "key-0054",
+        "op": "second"
+      },
+      {
+        "g": 0,
+        "i": 57,
+        "k": "key-0057",
+        "op": "third"
+      },
+      {
+        "g": 0,
+        "i": 6,
+        "k": "key-0006",
+        "op": "first"
+      },
+      {
+        "g": 0,
+        "i": 60,
+        "k": "key-0060",
+        "op": "third"
+      },
+      {
+        "g": 0,
+        "i": 66,
+        "k": "key-0066",
+        "op": "third"
+      },
+      {
+        "g": 0,
+        "i": 69,
+        "k": "key-0069",
+        "op": "third"
+      },
+      {
+        "g": 0,
+        "i": 9,
+        "k": "key-0009",
+        "op": "first"
+      },
+      {
+        "g": 2,
+        "i": 11,
+        "k": "key-0011",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 17,
+        "k": "key-0017",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 2,
+        "k": "key-0002",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 20,
+        "k": "key-0020",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 23,
+        "k": "key-0023",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 26,
+        "k": "key-0026",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 29,
+        "k": "key-0029",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 32,
+        "k": "key-0032",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 38,
+        "k": "key-0038",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 41,
+        "k": "key-0041",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 44,
+        "k": "key-0044",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 47,
+        "k": "key-0047",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 5,
+        "k": "key-0005",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 50,
+        "k": "key-0050",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 53,
+        "k": "key-0053",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 59,
+        "k": "key-0059",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 62,
+        "k": "key-0062",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 65,
+        "k": "key-0065",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 68,
+        "k": "key-0068",
+        "op": "updated"
+      },
+      {
+        "g": 2,
+        "i": 8,
+        "k": "key-0008",
+        "op": "updated"
+      },
+      {
+        "i": 0,
+        "k": "key-0000",
+        "op": "first"
+      },
+      {
+        "i": 14,
+        "k": "key-0014",
+        "op": "first"
+      },
+      {
+        "i": 21,
+        "k": "key-0021",
+        "op": "first"
+      },
+      {
+        "i": 28,
+        "k": "key-0028",
+        "op": "first"
+      },
+      {
+        "i": 35,
+        "k": "key-0035",
+        "op": "second"
+      },
+      {
+        "i": 42,
+        "k": "key-0042",
+        "op": "second"
+      },
+      {
+        "i": 49,
+        "k": "key-0049",
+        "op": "second"
+      },
+      {
+        "i": 56,
+        "k": "key-0056",
+        "op": "third"
+      },
+      {
+        "i": 63,
+        "k": "key-0063",
+        "op": "third"
+      },
+      {
+        "i": 7,
+        "k": "key-0007",
+        "op": "first"
+      }
+    ],
+    "txn": 1,
+    "version": 7
+  },
+  "tables": [
+    "t",
+    "v"
+  ],
+  "v": {
+    "hits": [
+      27,
+      23,
+      51
+    ],
+    "indexes": [
+      {
+        "covered": 1,
+        "files": 1,
+        "name": "emb"
+      }
+    ],
+    "rows": 64,
+    "version": 2
+  }
+}

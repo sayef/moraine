@@ -1,0 +1,275 @@
+/* The home page (overrides/home.html, docs/index.md): a pitch with real code, the commit drawn in
+   the mark's language (writers turning into beds), then facts, figures and status. Left-anchored;
+   no cards. */
+
+.mr-home {
+  padding-bottom: 2rem;
+}
+
+.mr-home .md-typeset h2,
+.mr-home h2 {
+  margin: 4rem 0 1.2rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* ---- Pitch --------------------------------------------------------------------------------- */
+
+.mr-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem 3rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.mr-hero__text,
+.mr-hero__code {
+  min-width: 0;
+}
+
+.md-typeset .mr-display {
+  margin: 0 0 1rem;
+  font-size: clamp(2.4rem, 5vw, 3.6rem);
+  font-family: var(--mr-display-font);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+
+.md-typeset .mr-display .headerlink {
+  display: none;
+}
+
+.md-typeset .mr-lede {
+  max-width: 34em;
+  margin: 0 0 1.6rem;
+  color: var(--mr-ink-2);
+  font-size: 1.15rem;
+  line-height: 1.45;
+}
+
+.mr-hero__text .md-button {
+  margin: 0 0.6rem 0.6rem 0;
+}
+
+.md-typeset .mr-muted {
+  color: var(--mr-ink-muted);
+}
+
+.md-typeset .mr-small {
+  font-size: 0.7rem;
+  margin-top: 1rem;
+}
+
+.mr-hero__code .highlight {
+  margin: 0;
+}
+
+/* Short, line-broken lines: the snippet never scrolls sideways, from 1440 px down to a phone. */
+.md-typeset .mr-hero__code pre > code {
+  font-size: 0.7rem;
+  white-space: pre;
+}
+
+@media screen and (max-width: 30em) {
+  .md-typeset .mr-hero__code pre > code {
+    font-size: 0.62rem;
+    padding: 0.9em 0.8em;
+  }
+}
+
+@media screen and (min-width: 60em) {
+  .mr-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  }
+}
+
+/* ---- How a commit lands: the log drawn as the mark draws it, with its description beside it -- */
+/* Settled entries are flat beds, darker with age. The two writers' entries are streams: each comes
+   down from above and turns a quarter circle into its bed, as the bands of the mark do. The newest
+   entry is the ochre bed. */
+
+.mr-commit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem 3rem;
+  align-items: start;
+}
+
+@media screen and (min-width: 60em) {
+  .mr-commit {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+}
+
+.md-typeset .mr-log {
+  margin: 0;
+  min-width: 0;
+}
+
+.md-typeset .mr-log__layers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.md-typeset .mr-log__layer {
+  --mr-bed: var(--mr-bed-old);
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  column-gap: 1rem;
+  align-items: center;
+  margin: 0 0 4px;
+  min-height: 2.2rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--mr-ink-2);
+}
+
+/* Every entry is one bed of the mark's stroke, laid along the bottom of its row. */
+.md-typeset .mr-log__layer::before {
+  content: "";
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  border: 0 solid var(--mr-bed);
+  border-bottom-width: 0.75rem;
+}
+
+/* A stream turning into its bed: a left leg and the bed, one stroke, one radius. */
+.md-typeset .mr-log__layer--new::before,
+.md-typeset .mr-log__layer--won::before {
+  border-left-width: 0.75rem;
+  border-bottom-left-radius: 1.5rem;
+}
+
+/* Writer A's stream sits outside writer B's, as the older band does in the mark. */
+.md-typeset .mr-log__layer--new::before {
+  margin-left: 1rem;
+}
+
+.md-typeset .mr-log__layer code {
+  grid-column: 2;
+  justify-self: start;
+  padding: 0;
+  background: none;
+  color: var(--mr-ink);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.md-typeset .mr-log__layer span {
+  grid-column: 2;
+  justify-self: start;
+  text-align: left;
+}
+
+.md-typeset .mr-log__layer--new {
+  --mr-bed: var(--mr-bed-new);
+  min-height: 2.8rem;
+}
+
+.md-typeset .mr-log__layer--new code {
+  color: var(--mr-accent);
+  font-weight: 600;
+}
+
+.md-typeset .mr-log__layer--won {
+  --mr-bed: var(--mr-bed-mid);
+  min-height: 2.8rem;
+}
+
+.md-typeset .mr-log__layer:nth-child(3) {
+  --mr-bed: var(--mr-bed-mid);
+}
+
+.md-typeset .mr-log__layer--old {
+  min-height: 1.8rem;
+}
+
+.md-typeset .mr-log__layer--older {
+  min-height: 2.4rem;
+}
+
+.md-typeset .mr-log figcaption {
+  max-width: none;
+  margin: 1rem 0 0;
+  color: var(--mr-ink-muted);
+  font-size: 0.7rem;
+  font-style: normal;
+  text-align: left;
+}
+
+.md-typeset .mr-steps ol {
+  margin-top: 0;
+}
+
+.md-typeset .mr-steps li {
+  margin-bottom: 0.7em;
+}
+
+.md-typeset .mr-steps li::marker {
+  color: var(--mr-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Facts: a definition list in two columns ------------------------------------------------ */
+
+.md-typeset .mr-facts dl {
+  display: grid;
+  gap: 1.2rem 2.5rem;
+  max-width: none;
+  margin: 0;
+}
+
+.md-typeset .mr-facts dt {
+  margin: 0;
+  font-weight: 650;
+}
+
+.md-typeset .mr-facts dd {
+  margin: 0.2rem 0 0;
+  color: var(--mr-ink-2);
+}
+
+.md-typeset .mr-facts dd p {
+  margin: 0;
+}
+
+@media screen and (min-width: 60em) {
+  .md-typeset .mr-facts dl {
+    grid-template-columns: 14rem minmax(0, 1fr);
+    row-gap: 1.4rem;
+  }
+  .md-typeset .mr-facts dd {
+    margin: 0;
+    max-width: 62ch;
+  }
+}
+
+/* ---- Status -------------------------------------------------------------------------------- */
+
+.md-typeset .mr-status table td:last-child {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.md-typeset .mr-status table td:first-child {
+  white-space: nowrap;
+}
+
+/* Planned items are marked *Planned* in the page, so the muting follows the content. */
+.md-typeset .mr-status table td:last-child em {
+  color: var(--mr-ink-muted);
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Material indents list items; the column starts on the text edge. */
+.md-typeset .mr-log__layers > li.mr-log__layer {
+  margin-left: 0;
+}
+
+.md-typeset ol.mr-log__layers {
+  margin-left: 0;
+}

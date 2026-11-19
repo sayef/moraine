@@ -1,0 +1,37 @@
+[package]
+name = "moraine-testkit"
+description = "Test tooling for moraine: chaos store, simulated clock, scheduler, reference model."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Runs tests/aws_sdk.rs: moraine's AWS SDK credential chain against the S3-compatible server.
+aws-sdk = ["morainedb/aws-sdk"]
+
+[dependencies]
+morainedb = { workspace = true, features = ["vector", "turbovec", "fts"] }
+object_store = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true }
+roaring = { workspace = true }
+# The merged reference index of T9 (full text): plain tantivy, as moraine pins it.
+tantivy = { workspace = true }
+
+[dev-dependencies]
+morainedb = { workspace = true, features = ["failpoints", "vector", "turbovec", "fts"] }
+deltalake = { workspace = true }
+datafusion = { workspace = true }
+fail = { workspace = true, features = ["failpoints"] }
+tempfile = { workspace = true }
+url = { workspace = true }

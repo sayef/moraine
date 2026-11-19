@@ -1,0 +1,28 @@
+[package]
+name = "moraine-spike"
+description = "The spike: the checks that validated the design before any library code. Results in docs/SPIKE.md."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+# Never published.
+publish = false
+
+[dependencies]
+# The meta-package (its newest is 1.1.2, which resolves to deltalake-core 1.1.4), for the S3
+# handlers it registers.
+deltalake = { version = "=1.1.2", default-features = false, features = ["rustls", "datafusion", "s3"] }
+tokio = { workspace = true }
+object_store = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true }
+tantivy = { workspace = true }
+usearch = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+tempfile = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }

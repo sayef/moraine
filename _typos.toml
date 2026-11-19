@@ -1,0 +1,22 @@
+# Spell check (https://github.com/crate-ci/typos). Run with `pre-commit run typos --all-files`.
+
+[files]
+extend-exclude = [
+    # Generated or binary: fonts, images, SVG path data, lockfiles and benchmark output.
+    "*.woff2",
+    "*.png",
+    "*.svg",
+    "*.txt",
+    "Cargo.lock",
+    "spike/out/*",
+    "bench/results/*.jsonl",
+    "crates/moraine-testkit/golden/*",
+]
+
+# Changelog grouping regexes match `[Ss]upport` and `[Dd]elete`; typos sees `upport` and `elete`.
+[type.toml]
+extend-ignore-re = ['\[[A-Za-z]{2}\][a-z]+']
+
+# OpenType variation axis tags used by the brand generators.
+[default.extend-words]
+wdth = "wdth"

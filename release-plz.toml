@@ -1,0 +1,67 @@
+[workspace]
+# Publish only when a release PR is merged, not on every push to main.
+release_always = false
+changelog_update = false
+git_release_enable = false
+git_tag_enable = false
+publish = false
+pr_labels = ["release"]
+semver_check = true
+
+# The library is the only published crate; its manifest says `publish = true`.
+[[package]]
+name = "morainedb"
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+publish = true
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "v{{ version }}"
+# A version with a pre-release part (0.1.0-alpha.1) becomes a GitHub pre-release.
+git_release_type = "auto"
+
+[[package]]
+name = "moraine-testkit"
+release = false
+
+[[package]]
+name = "moraine-cli"
+release = false
+
+[[package]]
+name = "moraine-spike"
+release = false
+
+[changelog]
+header = """# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/). Before 1.0, a minor version may break the API.
+
+## [Unreleased]
+"""
+
+# Only the version heading: the hand-written notes under `## [Unreleased]` become the release's entry.
+body = """
+## [{{ version }}]\
+    {%- if release_link -%}({{ release_link }}){% endif %} \
+    - {{ timestamp | date(format="%Y-%m-%d") }}
+"""
+
+trim = false
+protect_breaking_commits = true
+sort_commits = "oldest"
+
+commit_parsers = [
+    { message = "^chore(\\(.*\\))?: release", skip = true },
+    { message = "^Merge (pull request|branch)", skip = true },
+    { message = "^(feat|[Aa]dd|[Ss]upport|[Ii]ntroduce)", group = "<!-- 0 -->Added" },
+    { message = "^(deprecated|[Dd]eprecate)", group = "<!-- 2 -->Deprecated" },
+    { message = "^(remove|[Rr]emove|[Dd]elete|[Dd]rop)", group = "<!-- 3 -->Removed" },
+    { message = "^(fix|[Ff]ix)", group = "<!-- 4 -->Fixed" },
+    { message = "^(security|[Ss]ecurity)", group = "<!-- 5 -->Security" },
+    { message = "^(chore|ci|build|test|style)(\\(.*\\))?:", skip = true },
+    { message = ".*", group = "<!-- 1 -->Changed" },
+]

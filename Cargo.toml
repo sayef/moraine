@@ -1,0 +1,86 @@
+[workspace]
+resolver = "3"
+members = ["crates/moraine", "crates/moraine-testkit", "crates/moraine-cli", "spike"]
+# The comparison harness is a workspace of its own (DECISIONS.md D22).
+exclude = ["bench"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0 OR MIT"
+authors = ["Saiful Islam <bappasaif@gmail.com>"]
+repository = "https://github.com/sayef/moraine"
+homepage = "https://morainedb.pages.dev"
+readme = "README.md"
+keywords = ["database", "delta-lake", "object-storage", "s3", "vector-search"]
+categories = ["database-implementations", "database"]
+# Nothing is published unless a crate opts in: only `morainedb` sets `publish = true`; the test
+# kit, the CLI, the spike and bench/ stay unpublished.
+publish = false
+
+# Exact pins. Arrow, Parquet, DataFusion and object_store must stay on the versions deltalake
+# resolves to, or the types do not line up; see docs/SPIKE.md for the pinned set.
+[workspace.dependencies]
+# deltalake-core directly, under the name `deltalake`: the `deltalake` meta-package stops at 1.1.2
+# while the core is at 1.1.4, and kv0 pins `deltalake-core =1.1.4`, so both resolve to one crate.
+deltalake = { package = "deltalake-core", version = "=1.1.4", default-features = false, features = ["rustls", "datafusion"] }
+object_store = { version = "=0.13.2", features = ["aws", "fs"] }
+arrow = { version = "=59.3.2" }
+parquet = { version = "=59.3.2", features = ["async", "object_store"] }
+datafusion = { version = "=55.2.0", default-features = false }
+tantivy = { version = "=0.27.0" }
+# Behind moraine's `fts` feature: tantivy's `OwnedBytes` needs the trait to serve sections of a
+# mapped bundle without copying them. Already in the graph through tantivy.
+stable_deref_trait = "=1.2.1"
+usearch = { version = "=2.26.6" }
+futures = "=0.3.34"
+bytes = "=1.12.1"
+uuid = { version = "=1.29.2", features = ["v4", "v7"] }
+serde_json = "=1.0.154"
+serde = "=1.0.229"
+url = "=2.5.8"
+chrono = { version = "=0.4.45", default-features = false, features = ["clock"] }
+async-trait = "=0.1.92"
+tempfile = "=3.27.0"
+thiserror = "=2.0.21"
+fail = "=0.5.1"
+# Behind moraine's `aws-sdk` feature only: the SDK's credential chain (profiles, SSO,
+# credential_process) for s3:// databases.
+aws-config = { version = "=1.13.2" }
+aws-credential-types = { version = "=1.3.1" }
+morainedb = { path = "crates/moraine" }
+# Sidecars.
+xxhash-rust = { version = "=0.8.21", features = ["xxh3"] }
+memmap2 = "=0.9.12"
+sha2 = "=0.11.1"
+roaring = "=0.11.5"
+turbovec = "=1.1.2"
+# Behind moraine's `vector` feature: the work-stealing pool that searches the parts of every
+# file of a vector search at once (D83). Already in the graph through tantivy and turbovec.
+rayon = "=1.12.0"
+xorf = { version = "=0.13.0", default-features = false, features = ["binary-fuse"] }
+# Blob checksums: CRC-32C with the CPU's SSE 4.2 / ARMv8 instructions rather
+# than the table-driven `crc` already in the graph, since every blob byte is checksummed (D57).
+crc32c = "=0.6.8"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "time", "sync", "process"] }
+
+# Builds stay small on a shared disk: line tables are enough for backtraces, and incremental
+# data is the bulk of a debug target directory.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.test]
+debug = "line-tables-only"
+
+# The index libraries run their hot loops in their own code (usearch's C++ and tantivy). Optimise
+# them in debug builds so tests measure something meaningful, without rebuilding everything.
+[profile.dev.package.usearch]
+opt-level = 3
+
+[profile.dev.package.tantivy]
+opt-level = 3
+
+[profile.dev.package.numkong]
+opt-level = 3

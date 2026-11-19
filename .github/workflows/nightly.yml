@@ -1,0 +1,180 @@
+name: Nightly
+
+# The nightly suites (docs/design/test-ids.md): T3 and T4 with 100,000 seeds per scenario, T8 against
+# an S3-compatible server, and T13 (fuzzing, 10 minutes per target). Off until the repository
+# variable NIGHTLY_ENABLED is "true" (the repository is private until then, and private
+# repositories pay for their minutes). A failure uploads what replays it: the seed range and
+# the failing seed for a simulation, the store and seed for T8, the crashing input for a fuzz
+# target.
+
+on:
+  schedule:
+    # 01:17 UTC, outside the hour so it does not queue behind every other nightly.
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  # T3 and T4: every simulation suite, 100,000 seeds per scenario, split into 10 ranges of
+  # 10,000. A failing seed is printed as "replay with MORAINE_SIM_SEED=<n>".
+  simulation:
+    if: vars.NIGHTLY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - toy_counter
+          - tables_sim
+          - mutations_sim
+          - txn_sim
+          - fts_sim
+          - maintenance_sim
+          - segmentation
+          - crash_points
+          - crash_maintenance
+          - cancel_sim
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    env:
+      MORAINE_SIM_SEEDS: "10000"
+      SUITE: ${{ matrix.suite }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: nightly-sim
+      - name: Run seed range ${{ matrix.shard }}
+        run: |
+          export MORAINE_SIM_SEED_START=$((SHARD * MORAINE_SIM_SEEDS))
+          mkdir -p replay
+          {
+            echo "suite=$SUITE"
+            echo "MORAINE_SIM_SEED_START=$MORAINE_SIM_SEED_START"
+            echo "MORAINE_SIM_SEEDS=$MORAINE_SIM_SEEDS"
+            echo "commit=$GITHUB_SHA"
+          } > replay/range.txt
+          set -o pipefail
+          cargo test --release -p moraine-testkit --test "$SUITE" -- --nocapture 2>&1 \
+            | tee replay/output.txt
+      - name: Collect the failing seeds
+        if: failure()
+        run: |
+          grep -h "replay with" replay/output.txt > replay/seeds.txt || true
+          tail -n 200 replay/output.txt > replay/tail.txt
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: replay-${{ matrix.suite }}-${{ matrix.shard }}
+          path: |
+            replay/range.txt
+            replay/seeds.txt
+            replay/tail.txt
+          retention-days: 30
+
+  # T8 against an S3-compatible server (RustFS, as in ci.yml): eight `moraine stress` processes
+  # for 10 minutes with random kill -9, maintenance in three, then the invariant checks.
+  stress:
+    if: vars.NIGHTLY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MORAINE_T8_SECONDS: "600"
+      MORAINE_T8_PROCESSES: "8"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: nightly-stress
+      - name: Start an S3-compatible server (RustFS)
+        run: |
+          spike/s3-server.sh start
+          spike/s3-server.sh env | sed 's/^export //' | tr ' ' '\n' >> "$GITHUB_ENV"
+      - name: T8 on RustFS
+        run: |
+          # object_store reads the endpoint from the environment (the CLI and the test both
+          # open the database with AmazonS3Builder::from_env).
+          export AWS_ENDPOINT="$MORAINE_SPIKE_S3_ENDPOINT" AWS_ALLOW_HTTP=true
+          export MORAINE_T8_SEED="$GITHUB_RUN_ID"
+          export MORAINE_T8_LOCATION="s3://$MORAINE_SPIKE_S3_BUCKET/t8-$GITHUB_RUN_ID"
+          mkdir -p replay
+          echo "MORAINE_T8_SEED=$MORAINE_T8_SEED MORAINE_T8_SECONDS=$MORAINE_T8_SECONDS commit=$GITHUB_SHA" \
+            > replay/t8.txt
+          set -o pipefail
+          cargo test --release -p moraine-cli --test t8 -- --ignored --nocapture 2>&1 \
+            | tee replay/output.txt
+      - if: failure()
+        run: tail -n 300 replay/output.txt > replay/tail.txt
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: replay-t8
+          path: |
+            replay/t8.txt
+            replay/tail.txt
+          retention-days: 30
+      - if: always()
+        run: spike/s3-server.sh stop
+
+  # T13: each cargo-fuzz target for 10 minutes, seeded from the golden files. Stable Rust with
+  # libFuzzer's coverage instrumentation (fuzz/run.sh); a crash leaves its input in
+  # fuzz/artifacts/<target>/, which `fuzz/run.sh <target> --replay <file>` reproduces.
+  fuzz:
+    if: vars.NIGHTLY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - bundle
+          - log_entries
+          - checkpoint
+          - table_properties
+          - index_specs
+          - file_stats
+          - pin_manifest
+          - lease
+          - inbox
+          - text_query
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: nightly-fuzz
+      - run: fuzz/run.sh "$TARGET" 600
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          retention-days: 30

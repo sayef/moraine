@@ -1,0 +1,53 @@
+[graph]
+all-features = true
+# bench/ is a workspace of its own (it builds Lance through kv0) and is not checked here.
+
+[advisories]
+version = 2
+# Every advisory that does not fail the check is listed below with its reason, so a newly
+# unmaintained or vulnerable crate fails `cargo deny check` until it is looked at.
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    # Unmaintained, and only reachable through pinned dependencies: Arrow, Parquet, DataFusion and
+    # delta-rs use chrono in their public types, so moraine's own use of it (Delta timestamps)
+    # follows them. None of these has a known vulnerability.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: in the public types of Arrow, DataFusion and delta-rs, which moraine must match; revisit when they move to jiff or time" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz: through arrow-array, at the version Arrow 59 pins" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime: through deltalake-core and object_store (duration settings); no direct use" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: a build-time proc-macro dependency of validator_derive, through deltalake-core; no runtime code" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: a build-time proc macro through turbovec (statrs, nalgebra, simba), behind the optional turbovec feature only" },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.39 (no fix in a version object_store 0.13 accepts): quadratic attribute checks; parses only S3 responses from the configured endpoint" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.39 (no fix in a version object_store 0.13 accepts): unbounded namespace declarations; parses only S3 responses from the configured endpoint" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    # libbz2-rs-sys (via DataFusion's compression codecs): the permissive bzip2 licence
+    "bzip2-1.0.6",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

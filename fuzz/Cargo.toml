@@ -1,0 +1,99 @@
+# cargo-fuzz targets (T13). A workspace of its own, outside the main one, so
+# libfuzzer-sys and the coverage instrumentation never reach a normal build. Run with
+# `fuzz/run.sh` (stable Rust, no cargo-fuzz needed) or `cargo fuzz run <target>`.
+[package]
+name = "moraine-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "=0.4.12"
+morainedb = { path = "../crates/moraine", features = ["fts", "vector", "turbovec"] }
+serde_json = "=1.0.154"
+
+[profile.release]
+# Symbols but no debug info: with it, each target is 840 MB (DataFusion and delta-rs).
+debug = false
+strip = "debuginfo"
+# Fuzzing wants assertions and overflow checks on.
+debug-assertions = true
+overflow-checks = true
+
+[[bin]]
+name = "bundle"
+path = "fuzz_targets/bundle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "log_entries"
+path = "fuzz_targets/log_entries.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checkpoint"
+path = "fuzz_targets/checkpoint.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "table_properties"
+path = "fuzz_targets/table_properties.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "index_specs"
+path = "fuzz_targets/index_specs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file_stats"
+path = "fuzz_targets/file_stats.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pin_manifest"
+path = "fuzz_targets/pin_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lease"
+path = "fuzz_targets/lease.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inbox"
+path = "fuzz_targets/inbox.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_query"
+path = "fuzz_targets/text_query.rs"
+test = false
+doc = false
+bench = false

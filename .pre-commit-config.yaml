@@ -1,0 +1,72 @@
+# Install with `pipx install pre-commit && pre-commit install`, or `cargo install prek && prek install`.
+# CONTRIBUTING.md lists the checks; CI runs the same hooks (fmt and clippy in its own jobs).
+minimum_pre_commit_version: "3.0.0"
+# Hooks run at pre-commit only. Without this, git's commit-msg hook (wired up by a global
+# core.hooksPath) re-ran every hook against the message file, where the Rust hooks always report
+# "(no files to check) Skipped".
+default_stages: [pre-commit, manual]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Golden table objects are kept byte for byte as moraine wrote them (T12, docs/FORMAT.md).
+      - id: trailing-whitespace
+        exclude: '^crates/moraine-testkit/golden/table/'
+      - id: end-of-file-fixer
+        exclude: '^crates/moraine-testkit/golden/table/'
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        exclude: '^crates/moraine-testkit/golden/table/'
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.52.0
+    hooks:
+      - id: typos
+        # Report only (no --write-changes): a spelling fix is a decision, not something to apply blindly.
+        args: [--force-exclude]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
+        args: [--no-progress, --offline]
+
+  - repo: local
+    hooks:
+      # Triggered by Rust sources and by the manifests and tool settings that change how they
+      # build, so a dependency or lint-setting change is checked as well.
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        files: '(\.rs|(^|/)Cargo\.(toml|lock)|(^|/)(rustfmt|clippy)\.toml)$'
+        exclude: '^bench/'
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        files: '(\.rs|(^|/)Cargo\.(toml|lock)|(^|/)clippy\.toml)$'
+        # bench/ is a workspace of its own that builds Lance; lint it by hand
+        # (cd bench && cargo clippy --release -- -D warnings).
+        exclude: '^bench/'
+        pass_filenames: false
+      - id: cargo-fmt-bench
+        name: cargo fmt (bench)
+        entry: cargo fmt --manifest-path bench/Cargo.toml --all -- --check
+        language: system
+        files: '^bench/.*\.rs$'
+        pass_filenames: false

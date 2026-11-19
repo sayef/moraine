@@ -1,0 +1,130 @@
+site_name: moraine
+site_description: "A multi-writer database on object storage: Delta Lake tables, one conditional PUT per commit, no server."
+site_url: https://morainedb.pages.dev/
+repo_url: https://github.com/sayef/moraine
+repo_name: sayef/moraine
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; Saiful Islam. Licensed under Apache-2.0 or MIT.
+
+theme:
+  name: material
+  custom_dir: overrides
+  favicon: assets/favicon.svg
+  logo: assets/logo.svg
+  # Fonts are bundled (docs/assets/fonts, built by assets/src/build.py); nothing loads from a CDN.
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to the dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to the light theme
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/file-edit-outline
+
+extra_css:
+  - stylesheets/tokens.css
+  - stylesheets/extra.css
+  - stylesheets/home.css
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+hooks:
+  - docs/hooks.py
+
+# The spike results and the benchmark log are repository documents; the site links to
+# them on GitHub.
+exclude_docs: |
+  hooks.py
+  requirements.txt
+  __pycache__/
+  SPIKE.md
+  BENCH.md
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - The Delta log: concepts/delta-log.md
+      - The commit protocol: concepts/commits.md
+      - Consistency modes: concepts/consistency.md
+      - Clustering and pruning: concepts/clustering.md
+      - Sidecar indexes: concepts/indexes.md
+      - Exactly-once writes: concepts/exactly-once.md
+  - Guides:
+      - S3 and bucket requirements: guides/s3.md
+      - Local disk: guides/local-disk.md
+      - Many writers: guides/multi-writer.md
+      - Indexes and vector search: guides/vector-search.md
+      - Full-text and hybrid search: guides/full-text-search.md
+      - Blobs: guides/blobs.md
+      - Reading files and rows: guides/reading-files.md
+      - Maintenance: guides/maintenance.md
+  - Reference:
+      - The moraine command: cli.md
+      - On-disk format: FORMAT.md
+      - Versioning policy: SEMVER.md
+  - Benchmarks: benchmarks.md
+  - Design:
+      - Architecture: design/architecture.md
+      - Testing and simulation: design/testing.md
+      - Test and edge-case IDs: design/test-ids.md
+      - Design decisions: design/decisions.md
+      - Brand: design/brand.md
+  - About:
+      - FAQ: faq.md
+      - Changelog: changelog.md
+      - Contributing: contributing.md
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sayef/moraine
+      name: moraine on GitHub

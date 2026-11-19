@@ -1,0 +1,3 @@
+{"commitInfo":{"engineInfo":"moraine/0.0.0","isBlindAppend":false,"operation":"MERGE","operationParameters":{"mode":"Overwrite"},"timestamp":1767225600000}}
+{"txn":{"appId":"d7599677879feaeabcd4dd2543bf3fd8","lastUpdated":1767225600000,"version":1}}
+{"add":{"baseRowId":null,"clusteringProvider":null,"dataChange":true,"defaultRowCommitVersion":null,"modificationTime":1767225600000,"partitionValues":{},"path":"part-464987907e6efd12c1dd67990de101a5.parquet","size":1698,"stats":"{\"maxValues\":{\"g\":2,\"i\":39,\"k\":\"key-0039\",\"op\":\"first\"},\"minValues\":{\"g\":0,\"i\":0,\"k\":\"key-0000\",\"op\":\"first\"},\"nullCount\":{\"g\":6,\"i\":0,\"k\":0,\"op\":0},\"numRecords\":40}","tags":{"moraine.sortedBy":"[\"g\",\"k\"]"}}}

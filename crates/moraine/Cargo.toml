@@ -1,0 +1,82 @@
+[package]
+name = "morainedb"
+description = "A client-only, multi-writer database on object storage: Delta Lake tables, one conditional PUT per commit, no server."
+documentation = "https://docs.rs/morainedb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = true
+
+[lib]
+name = "moraine"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# No features by default: tables, scans, the key index, blobs and maintenance need none, and
+# the index kinds pull in large native or search libraries. S3 and local disk are always built
+# in (DECISIONS.md D90).
+[features]
+default = []
+# Credentials from the AWS SDK's default chain and the bucket's region for s3:// databases.
+aws-sdk = ["dep:aws-config", "dep:aws-credential-types"]
+# The default vector kind `vec-hnsw` (usearch HNSW).
+vector = ["dep:usearch", "dep:rayon"]
+# The TurboQuant vector kind `vec-tq` (D24).
+turbovec = ["dep:turbovec"]
+# The full-text kind `fts` (tantivy, D40) and hybrid search.
+fts = ["dep:tantivy", "dep:stable_deref_trait"]
+# Named failpoints at the step boundaries of the write path, for moraine's own crash tests.
+# Not for production builds, and not covered by the versioning policy (docs/SEMVER.md).
+failpoints = ["fail/failpoints"]
+
+[dependencies]
+object_store = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+# The commit layer (and only it) uses delta-rs; arrow, parquet and DataFusion are the versions
+# it resolves to (D5).
+deltalake = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true }
+datafusion = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+url = { workspace = true }
+fail = { workspace = true }
+aws-config = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+xxhash-rust = { workspace = true }
+memmap2 = { workspace = true }
+sha2 = { workspace = true }
+roaring = { workspace = true }
+xorf = { workspace = true }
+crc32c = { workspace = true }
+usearch = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+turbovec = { workspace = true, optional = true }
+tantivy = { workspace = true, optional = true }
+stable_deref_trait = { workspace = true, optional = true }
+
+[[example]]
+name = "vector_search"
+required-features = ["vector"]
+
+[[example]]
+name = "full_text_search"
+required-features = ["fts", "vector"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
