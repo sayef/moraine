@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.2](https://github.com/sayef/moraine/compare/v0.1.0-beta.1...v0.1.0-beta.2) - 2026-11-19
+
 ### Fixed
 
 - The capability probe no longer refuses a store that honours conditional writes when one of
