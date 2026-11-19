@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.1](https://github.com/sayef/moraine/releases/tag/v0.1.0-beta.1) - 2026-11-19
+
 The first release, published as betas (0.1.0-beta.N) before 0.1.0, contains the following.
 
 ### Added
