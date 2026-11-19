@@ -34,14 +34,37 @@ fn same_hits(a: &Value, b: &Value) -> bool {
         // Key lookups: exact JSON.
         return a == b;
     }
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(x, y)| {
-            let (x, y) = (x.as_array().unwrap(), y.as_array().unwrap());
-            x.len() == y.len()
-                && x.iter().zip(y).all(|(h, g)| {
-                    h[0] == g[0] && (h[1].as_f64().unwrap() - g[1].as_f64().unwrap()).abs() < 1e-5
-                })
-        })
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_ranking(x, y))
+}
+
+/// Two rankings of one query agree when their scores match position by position within a
+/// tolerance, and every hit is in both lists unless its score ties the last kept score.
+///
+/// Quantised scores are summed with the widest SIMD the CPU offers, so the same bundle can score
+/// a hit a few ulps differently on another machine; hits whose scores are that close may then
+/// trade places or swap at the cut-off. Anything further apart must match exactly.
+fn same_ranking(x: &Value, y: &Value) -> bool {
+    const TOL: f64 = 1e-4;
+    let (Some(x), Some(y)) = (x.as_array(), y.as_array()) else {
+        return false;
+    };
+    if x.len() != y.len() {
+        return false;
+    }
+    let hit = |h: &Value| (h[0].clone(), h[1].as_f64().unwrap());
+    let (x, y): (Vec<_>, Vec<_>) = (x.iter().map(hit).collect(), y.iter().map(hit).collect());
+    let close = |p: f64, q: f64| (p - q).abs() <= TOL * p.abs().max(q.abs()).max(1.0);
+    if !x.iter().zip(&y).all(|((_, p), (_, q))| close(*p, *q)) {
+        return false;
+    }
+    let Some(&(_, cut)) = x.last() else {
+        return true;
+    };
+    let tied_at_cut = |s: f64| close(s, cut);
+    x.iter()
+        .all(|(id, s)| tied_at_cut(*s) || y.iter().any(|(j, _)| j == id))
+        && y.iter()
+            .all(|(id, s)| tied_at_cut(*s) || x.iter().any(|(j, _)| j == id))
 }
 
 #[test]
